@@ -5,14 +5,15 @@ import re
 class Parser:
     langs = {
         'py' : {
-            'class' : 'class ([^\(]+)',
-            'function' : 'def (.+):',
+            'class' : r'class (?P<name>[^\(]+)',
+            'function' : r'def (?P<name>.+):',
             'comment_begin' : '"""',
+            'comment_middle' : '',
             'comment_end' : '"""',
         },
         'php' : {
-            'class' : 'class ([^\(]+)',
-            'function' : 'function (.+):',
+            'class' : r'class (?P<name>[^\(]+)',
+            'function' : r'function (?P<name>.+):',
             'comment_begin' : '/*',
             'comment_middle' : '*',
             'comment_end' : '*/',
@@ -27,44 +28,49 @@ class Parser:
       @see exports.parseComment
       @api public
     """
-    def parseComments(self, str):
+    def parseComments(self, str, ftype):
+        self.lang = self.langs[ftype]
+
         comments = []
         comment = {}
         buf = ''
-        ignore = false
-        within = false
+        ignore = False
+        within = False
         code = ''
 
         comment_begin = self.lang['comment_begin']
         comment_end = self.lang['comment_end']
+        len_begin = len(comment_begin)
+        len_end = len(comment_end)
 
-        for i in range(0, len(str)):
+        i = 0
+        while i < len(str):
             # start comment
-            if !within && str[i:i+len(comment_begin)] == comment_begin:
+            if within == False and str[i:i+len_begin] == comment_begin and (str[i-1] in ['', ' ', '\n', '\t']):
                 # code following previous comment
-                if buf.strip():
+                if buf.strip() and len(comments) > 0:
                     comment = comments[len(comments) - 1]
                     comment['code'] = code = buf.strip()
                     comment['ctx'] = self.parseCodeContext(code)
-                    buf = ''
-                }
-                i += 2
-                within = true
-                ignore = ('!' == str[i + len(comment_begin) + 1])
+                buf = ''
+                i += len_begin
+                within = True
+                ignore = ('!' == str[i + len_begin + 1])
             # end comment
-            elif within && str[i:i+len(comment_end)] == comment_end:
-                i += 2
-                buf = re.replace('^\s*'+re.escape(self.lang['comment_middle'])+' ?', '')
+            elif within and str[i:i+len_end] == comment_end and (str[i-1] in ['', ' ', '\n', '\t']):
+                i += len_end
+                buf = re.sub(re.escape(self.lang['comment_middle']), '', buf)
                 comment = self.parseComment(buf)
                 comment['ignore'] = ignore
                 comments.append(comment)
 
-                within = false
-                ignore = false
+                within = False
+                ignore = False
                 buf = ''
             # buffer comment or code
             else:
                 buf += str[i]
+                i += 1
         
         # trailing code
         if len(buf.strip()):
@@ -72,7 +78,6 @@ class Parser:
             code = buf.strip()
             comment['code'] = code
             comment['ctx'] = self.parseCodeContext(code)
-        }
 
         return comments
     
@@ -85,7 +90,7 @@ class Parser:
       - `description` the first line of the comment
       - `body` lines following the description
       - `content` both the description and the body
-      - `isPrivate` true when "@api private" is used
+      - `isPrivate` True when "@api private" is used
      
      @param {String} str
      @return {Object}
@@ -93,26 +98,36 @@ class Parser:
      @api public
     """
 
-    def parseComment(self, str):
-        str = str.strip()
-        comment = { tags: [] }
+    def parseComment(self, s):
+        s = s.strip()
+        comment = {'tags' : []}
         description = {}
         
-        # parse comment body
-        description['full'] = str.split('\n@')[0]
-        
-        desc = description['full'].split('\n\n')
+        # remove the same number of spaces/tabs before each line of the comment (counteracts indenting)
+        spaces = re.match('\s*', s.splitlines()[1]).group(0)
+        s = re.sub(spaces, '', s, re.MULTILINE)
+
+        # split the description and tags
+        pieces = re.split('\s+@', s)
+
+        description['full'] = pieces[0] or s
+        # split summary and body (two line breaks, both possibly followed by spaces/tabs
+        desc = re.split('\n', description['full'])
         description['summary'] = desc[0]
-        description['body'] = (len(desc) > 1) ? '\n\n'.join(desc.split('\n\n')[1:]) : ''
+        description['body'] = ''
+        if len(desc) > 1:
+            body = '\n'.join(desc[1:])
+            
+            description['body'] = body
+
         comment['description'] = description
         
         # parse tags
-        if str.find('\n@'):
-            #tags = '@' + '\n@'.join(str.split('\n@'))
-            comment['tags'] = map(self.parseTag, tags.splitlines())
+        if len(pieces) > 1:
+            comment['tags'] = map(self.parseTag, pieces[1:])
             for t in comment['tags']:
-                if t['type'] == 'api' && tag['visibility'] == 'private':
-                    comment['isPrivate'] = true
+                if t['type'] == 'api' and t['visibility'] == 'private':
+                    comment['isPrivate'] = True
                     break
         
         return comment
@@ -126,21 +141,21 @@ class Parser:
     """
 
     def parseTag(self, str):
-        parts = str.split(' ')
+        parts = str.strip().split(' ')
         tag = {} 
-        tag['type'] = parts.pop(0)[1:]
+        tag['type'] = parts.pop(0)
         type = tag['type']
 
         if type == 'param':
-            tag['types'] = self.parseTagTypes(parts[1:])
-            tag['name'] = parts[2:] or ''
-            tag['description'] = ' '.join(parts[3:] or '')
+            tag['types'] = self.parseTagTypes(parts[0])
+            tag['name'] = parts[1:] or ''
+            tag['description'] = ' '.join(parts[2:] or '')
         elif type == 'return':
-            tag['types'] = self.parseTagTypes(parts[1:])
-            tag['description'] = ' '.join(parts[2:])
+            tag['types'] = self.parseTagTypes(parts[0])
+            tag['description'] = ' '.join(parts[1:])
         elif type == 'see':
             if str.find('http'):
-                tag['title'] = len(parts) > 1 ? parts.pop(0) : ''
+                tag['title'] = parts.pop(0) or ''
                 tag['url'] = ' '.join(parts)
             else:
                 tag['local'] = ' '.join(parts)
@@ -176,22 +191,25 @@ class Parser:
     def parseCodeContext(self, str):
         str = str.splitlines()[0].strip()
 
-        for k,exp in self.lang:
+        for k,exp in self.lang.iteritems():
             if k.startswith('comment'):
                 continue
             match = re.match(exp, str)
             
             if match != None:
                 return {
+                    'type' : k,
                     'name' : match.group('name'),
                     'string' : match.group(0),
                 }
 
 if __name__ == "__main__":
     import sys
-    p = Parser
+    p = Parser()
     f = open(sys.argv[1])
 
-    print p.parseComments(f.read())
+    for c in p.parseComments(f.read(), 'py'):
+        print c['description']['full']+"\n"
+        print c['ctx']['string']+"\n\n"
 
     f.close()
