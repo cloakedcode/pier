@@ -1,6 +1,6 @@
 #! /usr/bin/python
 
-import re
+import re, os, os.path
 
 """
   Parses code and spits out block comments, nicely broken down.
@@ -27,8 +27,9 @@ class Parser:
         },
     }
     
-    def __init__(self, html_links):
-        self.html = html_links
+    def __init__(self, is_html = False, base_url = ''):
+        self.html = is_html
+        self.base_url = base_url or ''
 
     """
       Parse comments in the given file.
@@ -200,7 +201,7 @@ class Parser:
                         insert = '#'
                         if self.html:
                             insert = '.html#'
-                        url = url[:i]+insert+url[i+1:]
+                        url = self.base_url+url[:i]+insert+url[i+1:]
                     tag['url'] = url
         elif type == 'api':
             tag['visibility'] = parts[0]
@@ -319,14 +320,60 @@ class MarkdownTemplate:
 
         return output
 
+class Renderer:
+    def __init__(self, parser, output_html = False):
+        self.parser = parser
+        self.template = MarkdownTemplate()
+        self.output_html = output_html
+
+    def renderFile(self, file, out_file):
+        comments = self.parser.parseFile(file)
+
+        if len(comments) > 0:
+            text = self.template.renderComments(comments)
+
+            (path, ext) = os.path.splitext(out_file)
+            if self.output_html:
+                out_file = path+'.html'
+            else:
+                out_file = path+'.md'
+
+            f = open(out_file, "w+")
+            f.write(text)
+            f.close()
+
+    def renderDirectory(self, dir, out_dir):
+        for f in os.listdir(dir):
+            f = dir+'/'+f
+            out = out_dir+'/'+f
+            if os.path.isfile(f):
+                self.renderFile(f, out)
+            elif os.path.isdir(f):
+                self.renderDirectory(f, out)
+
 if __name__ == "__main__":
-    import sys
-    p = Parser((sys.argv[1] == 'yes'))
-    md = MarkdownTemplate()
-    input = sys.argv[2]
-    output = open(sys.argv[3], 'w+')
+    def opt_parser():
+        from optparse import OptionParser
+        parser = OptionParser("usage: %prog [options] file1 [file2...]")
 
-    out = md.renderComments(p.parseFile(input))
-    output.write(out)
+        parser.add_option("-d", "--directory", dest="directory", help="writes file(s) to DIR", metavar="DIR", default=".")
+        parser.add_option("", "--html", action="store_true", dest="html", help="outputs files as html", default=False)
+        parser.add_option("-b", "--base-url", dest="base_url", help="base url for links")
 
-    output.close()
+        return parser
+
+    opt_parser = opt_parser()
+    (options, args) = opt_parser.parse_args()
+
+    if len(args) < 1:
+        opt_parser.error("Need at least one file to parse.")
+
+    p = Parser(options.html, options.base_url)
+    renderer = Renderer(p, options.html)
+
+    for f in args:
+        out = options.directory+'/'+f
+        if os.path.isfile(f):
+            renderer.renderFile(f, out)
+        elif os.path.isdir(f):
+            renderer.renderDirectory(f, out)
