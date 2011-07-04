@@ -26,13 +26,14 @@ class Parser:
             'comment_end' : '*/',
         },
     }
-    
-    def __init__(self, is_html = False, base_url = ''):
-        self.html = is_html
-        self.base_url = base_url or ''
 
     """
       Parse comments in the given file.
+
+      A code example:
+
+          def echo(s):
+            print s
      
       @param {String} file Path of file.
       @return {Array}
@@ -130,15 +131,21 @@ class Parser:
     """
 
     def parseComment(self, s):
-        s = s.strip()
         comment = {'tags' : []}
         description = {}
         
-        # remove the same number of spaces/tabs before each line of the comment (counteracts indenting)
-        lines = s.splitlines()
-        if len(lines) > 1:
-            spaces = re.match('\s*', lines[2]).group(0)
-            s = re.sub(spaces, '', s, re.MULTILINE)
+        # remove the same number of spaces/tabs before each line of the comment (removes indenting)
+        spaces = re.match('^\n(\s*)', s).group(1)
+        # -- warning --
+        # this is a nasty little workaround
+        # I couldn't make the line below work:
+        #s = re.sub('('+spaces+')', '', s)
+        # what's wrong with that? oh well, this works
+        # -- end warning --
+        lines = ''
+        for l in s.split('\n'):
+            lines += l.replace(spaces, '', 1)+'\n'
+        s = lines.strip()
 
         # split the description and tags
         pieces = re.split('\s+@', s)
@@ -185,24 +192,8 @@ class Parser:
             tag['types'] = self.parseTagTypes(parts[0])
             tag['description'] = ' '.join(parts[1:])
         elif type == 'see':
-            if str.find('/') > -1:
-                tag['title'] = parts.pop(0) or ''
-                tag['url'] = ' '.join(parts)
-            else:
-                tag['title'] = parts.pop(0) or ''
-                url = ''.join(parts)
-
-                if url == '':
-                    tag['url'] = '#'+tag['title']
-                else:
-                    i = url.rfind('.')
-                    url = url.replace('.', '/')
-                    if i > -1:
-                        insert = '#'
-                        if self.html:
-                            insert = '.html#'
-                        url = self.base_url+url[:i]+insert+url[i+1:]
-                    tag['url'] = url
+            tag['title'] = parts.pop(0) or ''
+            tag['url'] = ' '.join(parts)
         elif type == 'api':
             tag['visibility'] = parts[0]
         elif type == 'type':
@@ -238,7 +229,7 @@ class Parser:
         for k,exp in self.lang.iteritems():
             if k.startswith('comment'):
                 continue
-            match = re.match(exp, str)
+            match = re.search(exp, str)
             
             if match != None:
                 ctx = {
@@ -253,28 +244,94 @@ class Parser:
         if self.filename:
             return {'type' : 'file', 'name' : self.filename}
 
-"""
-Turns comments into markdown.
-"""
-class MarkdownTemplate:
+class Template:
+    def __init__(self, base_url = ''):
+        self.base_url = base_url or ''
+
     """
         Renders a bunch of comments as markdown.
     """
-    def renderComments(self, comments):
+    def renderComments(self, comments, filename = ''):
         output = ''
         for c in comments:
             if 'isPrivate' in c and c['isPrivate']:
                 continue
-            output += self.renderComment(c)
+            output += self.renderComment(c, filename)
 
         return output
 
+    def renderComment(self, comment, filename):
+        pass
+"""
+Turns comments into markdown.
+"""
+class MarkdownTemplate(Template):
     """
         Renders a comment as markdown.
 
         @api private
     """
-    def renderComment(self, comment):
+    def renderComment(self, comment, filename):
+        output = ''
+
+        # class/function header
+        type = comment['ctx']['type']
+        name = comment['ctx']['name']
+        if type == 'class' or type == 'file':
+            output += "# "+name+"\n\n"
+        else:
+            output += "## "+name+"\n\n"
+        # function definition
+        if type == 'function':
+            output += "    "+comment['ctx']['definition']+"\n\n"
+        # description
+        output += comment['description']['full']+"\n\n"
+
+        see = ''
+        params = ''
+        returns = ''
+        for t in comment['tags']:
+            type = t['type']
+
+            if type == 'param':
+                params += t['name']+' '+'|'.join(t['types'])+' '+t['description']+'\n'
+            elif type == 'return':
+                returns += ' '.join(t['types'])+' '+t['description']+'\n\n'
+            elif type == 'see':
+                url = t['url']
+                i = url.rfind('.')
+                url = url.replace('.', '/')
+                if i > -1:
+                    url = self.base_url+url[:i]+'#'+url[i+1:]
+                see += '['+t['title']+']('+url+')\n\n'
+            elif type == 'api':
+                #output += 'Visibility: '+t['visibility']+'\n\n'
+                pass
+            elif type == 'type':
+                output += ' '.join(t['types'])+'\n\n'
+
+        if params != '':
+            output += "### Parameters\n\n"+params+"\n"
+        if returns != '':
+            output += "### Returns\n"+returns
+        if see != '':
+            output += "### See\n"+see
+
+        return output
+
+class HTMLTemplate(Template):
+    def setup_pygment(self, filename):
+        from pygments.formatters import HtmlFormatter
+        from pygments.lexers import get_lexer_for_filename
+        
+        self.lexer = get_lexer_for_filename(filename)
+        self.formatter = HtmlFormatter()
+
+    def renderComment(self, comment, filename):
+        from pygments import highlight
+
+        self.setup_pygment(filename)
+
         output = ''
 
         # class/function header
@@ -284,14 +341,27 @@ class MarkdownTemplate:
             output += "# "+name+"\n\n"
         else:
             output += "<a name='"+name+"'><h2>"+name+"</a></h2>\n\n"
-        # class/function definition
+        # function definition
         if type == 'function':
-            output += "    "+comment['ctx']['definition']+"\n\n"
-        else:
-            pass
-            #output += "    "+comment['ctx']['definition']+"\n\n"
+            output += highlight(comment['ctx']['definition'], self.lexer, self.formatter)+"\n\n"
+
         # description
-        output += comment['description']['full']+"\n\n"
+        # highlight each line of code
+        # insert the highlighted code, replacing the original line of code
+        lines = ''
+        code = ''
+        for l in comment['description']['full'].splitlines():
+            if len(l.strip()) > 0 and l.startswith('    '):
+                code += l[4:]+'\n'
+            elif len(code) > 0:
+                lines += highlight(code, self.lexer, self.formatter)+l+'\n'
+                code = ''
+            else:
+                lines += l+'\n'
+        if len(code) > 0:
+            lines += highlight(code, self.lexer, self.formatter)+'\n'
+
+        output += lines+"\n\n"
 
         see = ''
         params = ''
@@ -304,7 +374,15 @@ class MarkdownTemplate:
             elif type == 'return':
                 returns += ' '.join(t['types'])+' '+t['description']+'\n\n'
             elif type == 'see':
-                see += '['+t['title']+']('+t['url']+')\n\n'
+                url = t['url']
+                if url == '':
+                    url = '#'+t['title']
+                else:
+                    i = url.rfind('.')
+                    url = url.replace('.', '/')
+                    if i > -1:
+                        url = self.base_url+url[:i]+'.html#'+url[i+1:]
+                see += '['+t['title']+']('+url+')\n\n'
             elif type == 'api':
                 #output += 'Visibility: '+t['visibility']+'\n\n'
                 pass
@@ -318,19 +396,21 @@ class MarkdownTemplate:
         if see != '':
             output += "### See\n"+see
 
-        return output
+        import markdown
+        return markdown.markdown(output)
+
 
 class Renderer:
-    def __init__(self, parser, output_html = False):
-        self.parser = parser
-        self.template = MarkdownTemplate()
+    def __init__(self, output_html = False, base_url = ''):
+        self.parser = Parser()
+        self.template = HTMLTemplate(base_url) if output_html else MarkdownTemplate(base_url)
         self.output_html = output_html
 
     def renderFile(self, file, out_file):
         comments = self.parser.parseFile(file)
 
         if len(comments) > 0:
-            text = self.template.renderComments(comments)
+            text = self.template.renderComments(comments, file)
 
             (path, ext) = os.path.splitext(out_file)
             if self.output_html:
@@ -368,8 +448,7 @@ if __name__ == "__main__":
     if len(args) < 1:
         opt_parser.error("Need at least one file to parse.")
 
-    p = Parser(options.html, options.base_url)
-    renderer = Renderer(p, options.html)
+    renderer = Renderer(options.html, options.base_url)
 
     for f in args:
         out = options.directory+'/'+f
