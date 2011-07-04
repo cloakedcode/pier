@@ -26,6 +26,9 @@ class Parser:
             'comment_end' : '*/',
         },
     }
+    
+    def __init__(self, html_links):
+        self.html = html_links
 
     """
       Parse comments in the given file.
@@ -194,7 +197,10 @@ class Parser:
                     i = url.rfind('.')
                     url = url.replace('.', '/')
                     if i > -1:
-                        url = url[:i]+'#'+url[i+1:]
+                        insert = '#'
+                        if self.html:
+                            insert = '.html#'
+                        url = url[:i]+insert+url[i+1:]
                     tag['url'] = url
         elif type == 'api':
             tag['visibility'] = parts[0]
@@ -315,10 +321,10 @@ class MarkdownTemplate:
 
 if __name__ == "__main__":
     import sys
-    p = Parser()
+    p = Parser((sys.argv[1] == 'yes'))
     md = MarkdownTemplate()
-    input = sys.argv[1]
-    output = open(sys.argv[2], 'w+')
+    input = sys.argv[2]
+    output = open(sys.argv[3], 'w+')
 
     out = md.renderComments(p.parseFile(input))
     output.write(out)
