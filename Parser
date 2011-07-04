@@ -1,0 +1,212 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Pier Docs</title>
+
+<link rel='stylesheet' type='text/css' media='all' href='style.css' />
+
+<meta http-equiv='expires' content='-1' />
+<meta http-equiv= 'pragma' content='no-cache' />
+<meta name='robots' content='all' />
+
+</head>
+<body>
+
+<!-- START NAVIGATION -->
+<div id="nav"><div id="nav_inner"></div></div>
+<div id="nav2"><a name="top">&nbsp;</a></div>
+<div id="masthead">
+<table cellpadding="0" cellspacing="0" border="0" style="width:100%">
+<tr>
+<td><h1>Pier Docs</h1></td>
+</tr>
+</table>
+</div>
+<!-- END NAVIGATION -->
+
+
+<!-- START BREADCRUMB -->
+<table cellpadding="0" cellspacing="0" border="0" style="width:100%">
+<tr>
+<td id="breadcrumb">
+<a href="http://github.com/cloakedcode/pier">Pier Home</a> &nbsp;&#8250;&nbsp;
+Pier Docs
+</td>
+</tr>
+</table>
+<!-- END BREADCRUMB -->
+
+<br clear="all" />
+
+
+<!-- START CONTENT -->
+<div id="content">
+
+<h1 id="parser">Parser</h1>
+<p>Parses code and spits out block comments, nicely broken down.</p>
+<h3 id="see">See</h3>
+<p><a href="#parseComments">parseComments</a></p>
+<a name='parseFile'>
+<h2>
+parseFile</a>
+</h2>
+
+<pre><code>parseFile(self, file)
+</code></pre>
+<p>Parse comments in the given file.</p>
+<h3 id="parameters">Parameters</h3>
+<table>
+ <tr><td>
+file
+</td><td>
+String
+</td><td>
+Path of file.
+</td></tr>
+</table>
+
+<h3 id="returns">Returns</h3>
+<p>Array</p>
+<h3 id="see-1">See</h3>
+<p><a href="#parseComments">parseComments</a></p>
+<p><a href="Parser#renderComments">MarkdownTemplate::renderComments</a></p>
+<a name='parseComments'>
+<h2>
+parseComments</a>
+</h2>
+
+<pre><code>parseComments(self, str)
+</code></pre>
+<p>Parse comments in the given code.</p>
+<h3 id="parameters-1">Parameters</h3>
+<table>
+ <tr><td>
+str
+</td><td>
+String
+</td><td>
+String to parse.
+</td></tr>
+</table>
+
+<h3 id="returns-1">Returns</h3>
+<p>Array</p>
+<h3 id="see-2">See</h3>
+<p><a href="#parseComment">parseComment</a></p>
+<a name='parseComment'>
+<h2>
+parseComment</a>
+</h2>
+
+<pre><code>parseComment(self, s)
+</code></pre>
+<p>Parse the given comment <code>s</code>.</p>
+<p>The comment object returned contains the following</p>
+<ul>
+<li><code>tags</code> array of tag objects</li>
+<li><code>description</code> the first line of the comment</li>
+<li><code>body</code> lines following the description</li>
+<li><code>content</code> both the description and the body</li>
+<li><code>isPrivate</code> True when &quot;@api private&quot; is used</li>
+</ul>
+<h3 id="parameters-2">Parameters</h3>
+<table>
+ <tr><td>
+s
+</td><td>
+String
+</td><td></td></tr>
+</table>
+
+<h3 id="returns-2">Returns</h3>
+<p>Dictionary</p>
+<h3 id="see-3">See</h3>
+<p><a href="#parseTag">parseTag</a></p>
+<a name='parseTag'>
+<h2>
+parseTag</a>
+</h2>
+
+<pre><code>parseTag(self, str)
+</code></pre>
+<p>Parse tag string &quot;@param {Array} name description&quot; etc.</p>
+<h3 id="parameters-3">Parameters</h3>
+<table>
+ <tr><td>
+str
+</td><td>
+String
+</td><td></td></tr>
+</table>
+
+<h3 id="returns-3">Returns</h3>
+<p>Dictionary</p>
+<a name='parseTagTypes'>
+<h2>
+parseTagTypes</a>
+</h2>
+
+<pre><code>parseTagTypes(self, str)
+</code></pre>
+<p>Parse tag type string &quot;{Array|Object}&quot; etc.</p>
+<h3 id="parameters-4">Parameters</h3>
+<table>
+ <tr><td>
+str
+</td><td>
+String
+</td><td></td></tr>
+</table>
+
+<h3 id="returns-4">Returns</h3>
+<p>Array</p>
+<a name='parseCodeContext'>
+<h2>
+parseCodeContext</a>
+</h2>
+
+<pre><code>parseCodeContext(self, str)
+</code></pre>
+<p>Parse the context from the given <code>str</code> of code.</p>
+<p>This method attempts to discover the context for the comment based on it's code.</p>
+<h3 id="parameters-5">Parameters</h3>
+<table>
+ <tr><td>
+str
+</td><td>
+String
+</td><td></td></tr>
+</table>
+
+<h3 id="returns-5">Returns</h3>
+<p>Dictionary</p>
+<h1 id="markdowntemplate">MarkdownTemplate</h1>
+<p>Turns comments into markdown.</p>
+<a name='renderComments'>
+<h2>
+renderComments</a>
+</h2>
+
+<pre><code>renderComments(self, comments)
+</code></pre>
+<p>Renders a bunch of comments as markdown.</p>
+
+</div>
+<!-- END CONTENT -->
+
+
+<div id="footer">
+<p>
+Previous Topic:&nbsp;&nbsp;<a href="#">Previous Class</a>
+&nbsp;&nbsp;&nbsp;&middot;&nbsp;&nbsp;
+<a href="#top">Top of Page</a>&nbsp;&nbsp;&nbsp;&middot;&nbsp;&nbsp;
+<a href="#">User Guide Home</a>&nbsp;&nbsp;&nbsp;&middot;&nbsp;&nbsp;
+Next Topic:&nbsp;&nbsp;<a href="#">Next Class</a>
+</p>
+<p><a href="http://codeigniter.com">CodeIgniter</a> &nbsp;&middot;&nbsp; Copyright &#169; 2006 - 2011 &nbsp;&middot;&nbsp; <a href="http://ellislab.com/">EllisLab, Inc.</a></p>
+</div>
+
+</body>
+</html>
