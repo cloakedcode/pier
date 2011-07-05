@@ -54,7 +54,7 @@ class Parser:
                 f.close()
                 
                 return comments
-        print "This file type is not supported yet.\n"
+        print "This file type is not supported yet ("+file+")"
         return []
      
     """
@@ -86,9 +86,9 @@ class Parser:
                     comment['code'] = buf.strip()
                     comment['ctx'] = self.parseCodeContext(comment['code'])
                 buf = ''
-                i += len_begin
+                ignore = ('!' == str[i + len_begin])
+                i += len_begin + (1 if ignore else 0)
                 within = True
-                ignore = ('!' == str[i + len_begin + 1])
             # end comment
             elif within and str[i:i+len_end] == comment_end and (str[i-1] in whitespace):
                 i += len_end
@@ -106,7 +106,7 @@ class Parser:
                 i += 1
         
         # trailing code
-        if len(buf.strip()):
+        if len(buf.strip()) and len(comments) > 0:
             comment = comments[len(comments) - 1]
             comment['code'] = buf.strip()
             comment['ctx'] = self.parseCodeContext(comment['code'])
@@ -244,7 +244,10 @@ class Parser:
         if self.filename:
             return {'type' : 'file', 'name' : self.filename}
 
-class Template:
+"""
+Turns comments into markdown.
+"""
+class MarkdownTemplate:
     def __init__(self, base_url = ''):
         self.base_url = base_url or ''
 
@@ -254,38 +257,26 @@ class Template:
     def renderComments(self, comments, filename = ''):
         output = ''
         for c in comments:
-            if 'isPrivate' in c and c['isPrivate']:
+            if ('isPrivate' in c and c['isPrivate']) or c['ignore']:
                 continue
             output += self.renderComment(c, filename)
 
         return output
 
-    def renderComment(self, comment, filename):
-        pass
-"""
-Turns comments into markdown.
-"""
-class MarkdownTemplate(Template):
     """
         Renders a comment as markdown.
 
-        @api private
+        @api public
     """
     def renderComment(self, comment, filename):
         output = ''
 
         # class/function header
-        type = comment['ctx']['type']
-        name = comment['ctx']['name']
-        if type == 'class' or type == 'file':
-            output += "# "+name+"\n\n"
-        else:
-            output += "## "+name+"\n\n"
+        output += self._header(comment)
         # function definition
-        if type == 'function':
-            output += "    "+comment['ctx']['definition']+"\n\n"
+        output += self._definition(comment)
         # description
-        output += comment['description']['full']+"\n\n"
+        output += self._description(comment)
 
         see = ''
         params = ''
@@ -294,32 +285,75 @@ class MarkdownTemplate(Template):
             type = t['type']
 
             if type == 'param':
-                params += t['name']+' '+'|'.join(t['types'])+' '+t['description']+'\n'
+                params += self._param_tag(t)
             elif type == 'return':
-                returns += ' '.join(t['types'])+' '+t['description']+'\n\n'
+                returns += self._return_tag(t)
             elif type == 'see':
-                url = t['url']
-                i = url.rfind('.')
-                url = url.replace('.', '/')
-                if i > -1:
-                    url = self.base_url+url[:i]+'#'+url[i+1:]
-                see += '['+t['title']+']('+url+')\n\n'
+                (title, url) = self._see_tag(t)
+                see += '['+title+']('+url+')\n\n'
             elif type == 'api':
                 #output += 'Visibility: '+t['visibility']+'\n\n'
                 pass
             elif type == 'type':
-                output += ' '.join(t['types'])+'\n\n'
+                output += self._see_tag(t)
 
         if params != '':
-            output += "### Parameters\n\n"+params+"\n"
+            output += self._params(params)
         if returns != '':
-            output += "### Returns\n"+returns
+            output += self._returns(returns)
         if see != '':
-            output += "### See\n"+see
+            output += self._see(see)
 
         return output
 
-class HTMLTemplate(Template):
+    def _header(self, comment):
+        type = comment['ctx']['type']
+        name = comment['ctx']['name']
+        if type == 'class' or type == 'file':
+            return "# "+name+"\n\n"
+        else:
+            return "## "+name+"\n\n"
+
+    def _definition(self, comment):
+        if type == 'function':
+            return "    "+comment['ctx']['definition']+"\n\n"
+        return ''
+
+    def _description(self, comment):
+        return comment['description']['full']+"\n\n"
+
+    def _param_tag(self, t):
+        return t['name']+' '+'|'.join(t['types'])+' '+t['description']+'\n'
+    def _return_tag(self, t):
+        return ' '.join(t['types'])+' '+t['description']+'\n\n'
+    def _see_tag(self, t):
+        url = t['url']
+        i = url.rfind('.')
+        url = url.replace('.', '/')
+        if i > -1:
+            url = self.base_url+url[:i]+'#'+url[i+1:]
+        return (t['title'], url)
+    def _type_tag(self, t):
+        return ' '.join(t['types'])+'\n\n'
+
+    def _params(self, params):
+        return "### Parameters\n\n"+params+"\n"
+
+    def _returns(self, returns):
+        return "### Returns\n"+returns
+
+    def _see(self, see):
+        return "### See\n"+see
+
+class HTMLTemplate(MarkdownTemplate):
+    def renderComment(self, comment, filename):
+        self.setup_pygment(filename)
+
+        text = MarkdownTemplate.renderComment(self, comment, filename)
+
+        import markdown
+        return markdown.markdown(text)
+
     def setup_pygment(self, filename):
         from pygments.formatters import HtmlFormatter
         from pygments.lexers import get_lexer_for_filename
@@ -327,25 +361,24 @@ class HTMLTemplate(Template):
         self.lexer = get_lexer_for_filename(filename)
         self.formatter = HtmlFormatter()
 
-    def renderComment(self, comment, filename):
-        from pygments import highlight
-
-        self.setup_pygment(filename)
-
-        output = ''
-
+    def _header(self, comment):
         # class/function header
         type = comment['ctx']['type']
         name = comment['ctx']['name']
         if type == 'class' or type == 'file':
-            output += "# "+name+"\n\n"
+            return "# "+name+"\n\n"
         else:
-            output += "<a name='"+name+"'><h2>"+name+"</a></h2>\n\n"
+            return "<a name='"+name+"'><h2>"+name+"</a></h2>\n\n"
+
+    def _definition(self, comment):
         # function definition
         if type == 'function':
-            output += highlight(comment['ctx']['definition'], self.lexer, self.formatter)+"\n\n"
+            return highlight(comment['ctx']['definition'], self.lexer, self.formatter)+"\n\n"
+        return ''
 
-        # description
+    def _description(self, comment):
+        from pygments import highlight
+
         # highlight each line of code
         # insert the highlighted code, replacing the original line of code
         lines = ''
@@ -361,44 +394,26 @@ class HTMLTemplate(Template):
         if len(code) > 0:
             lines += highlight(code, self.lexer, self.formatter)+'\n'
 
-        output += lines+"\n\n"
+        return lines+"\n\n"
 
-        see = ''
-        params = ''
-        returns = ''
-        for t in comment['tags']:
-            type = t['type']
+    def _params(self, params):
+        return "### Parameters\n<table>\n"+params+"</table>\n\n"
 
-            if type == 'param':
-                params += ' <tr><td>'+t['name']+'</td><td>'+'|'.join(t['types'])+'</td><td>'+t['description']+'</td></tr>\n'
-            elif type == 'return':
-                returns += ' '.join(t['types'])+' '+t['description']+'\n\n'
-            elif type == 'see':
-                url = t['url']
-                if url == '':
-                    url = '#'+t['title']
-                else:
-                    i = url.rfind('.')
-                    url = url.replace('.', '/')
-                    if i > -1:
-                        url = self.base_url+url[:i]+'.html#'+url[i+1:]
-                see += '['+t['title']+']('+url+')\n\n'
-            elif type == 'api':
-                #output += 'Visibility: '+t['visibility']+'\n\n'
-                pass
-            elif type == 'type':
-                output += ' '.join(t['types'])+'\n\n'
-
-        if params != '':
-            output += "### Parameters\n<table>\n"+params+"</table>\n\n"
-        if returns != '':
-            output += "### Returns\n"+returns
-        if see != '':
-            output += "### See\n"+see
-
-        import markdown
-        return markdown.markdown(output)
-
+    def _param_tag(self, t):
+        return ' <tr><td>'+t['name']+'</td><td>'+'|'.join(t['types'])+'</td><td>'+t['description']+'</td></tr>\n'
+    def _see_tag(self, t):
+        url = t['url']
+        if url == '':
+            url = '#'+t['title']
+        else:
+            i = url.rfind('.')
+            url = url.replace('.', '/')
+            if i > -1:
+                url = self.base_url+url[:i]+'.html#'+url[i+1:]
+            else:
+                url = self.base_url+url+'.html'
+                
+        return (t['title'], url)
 
 class Renderer:
     def __init__(self, output_html = False, base_url = ''):
@@ -424,8 +439,13 @@ class Renderer:
 
     def renderDirectory(self, dir, out_dir):
         for f in os.listdir(dir):
-            f = dir+'/'+f
+            # skip dot files
+            if f[0] == '.':
+                continue
+
             out = out_dir+'/'+f
+            f = dir+'/'+f
+
             if os.path.isfile(f):
                 self.renderFile(f, out)
             elif os.path.isdir(f):
@@ -437,7 +457,7 @@ if __name__ == "__main__":
         parser = OptionParser("usage: %prog [options] file1 [file2...]")
 
         parser.add_option("-d", "--directory", dest="directory", help="writes file(s) to DIR", metavar="DIR", default=".")
-        parser.add_option("", "--html", action="store_true", dest="html", help="outputs files as html", default=False)
+        parser.add_option("-o", "--output", dest="output", help="outputs files as 'html' or 'markdown'", default='markdown')
         parser.add_option("-b", "--base-url", dest="base_url", help="base url for links")
 
         return parser
@@ -448,10 +468,10 @@ if __name__ == "__main__":
     if len(args) < 1:
         opt_parser.error("Need at least one file to parse.")
 
-    renderer = Renderer(options.html, options.base_url)
+    renderer = Renderer((options.output == 'html'), options.base_url)
 
     for f in args:
-        out = options.directory+'/'+f
+        out = options.directory+'/'+os.path.basename(f)
         if os.path.isfile(f):
             renderer.renderFile(f, out)
         elif os.path.isdir(f):
