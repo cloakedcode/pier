@@ -325,7 +325,7 @@ class MarkdownTemplate:
     def _param_tag(self, t):
         return t['name']+' '+'|'.join(t['types'])+' '+t['description']+'\n'
     def _return_tag(self, t):
-        return ' '.join(t['types'])+' '+t['description']+'\n\n'
+        return '{'+' | '.join(t['types'])+'}\n\n'+t['description']+'\n\n'
     def _see_tag(self, t):
         url = t['url']
         i = url.rfind('.')
@@ -334,13 +334,13 @@ class MarkdownTemplate:
             url = self.base_url+url[:i]+'#'+url[i+1:]
         return (t['title'], url)
     def _type_tag(self, t):
-        return ' '.join(t['types'])+'\n\n'
+        return '{'+'|'.join(t['types'])+'}\n\n'
 
     def _params(self, params):
         return "### Parameters\n\n"+params+"\n"
 
     def _returns(self, returns):
-        return "### Returns\n"+returns
+        return "### Return\n"+returns
 
     def _see(self, see):
         return "### See\n"+see
@@ -415,11 +415,30 @@ class HTMLTemplate(MarkdownTemplate):
                 
         return (t['title'], url)
 
+class MarcdocTemplate(MarkdownTemplate):
+    def renderComment(self, comment, filename):
+        return MarkdownTemplate.renderComment(self, comment, filename)
+
+    def _header(self, comment):
+        # class/function header
+        type = comment['ctx']['type']
+        name = comment['ctx']['name']
+        if type == 'class' or type == 'file':
+            return "# "+name+"\n\n"
+        else:
+            return "<a name='"+name+"'><h2>"+name+"</a></h2>\n\n"
+
 class Renderer:
-    def __init__(self, output_html = False, base_url = ''):
+    def __init__(self, output_type, base_url = ''):
         self.parser = Parser()
-        self.template = HTMLTemplate(base_url) if output_html else MarkdownTemplate(base_url)
-        self.output_html = output_html
+        self.output_html = (output_type == 'html')
+
+        if output_type == 'html':
+            self.template = HTMLTemplate(base_url)
+        elif output_type == 'marcdoc':
+            self.template = MarcdocTemplate(base_url)
+        else:
+            self.template = MarkdownTemplate(base_url)
 
     def renderFile(self, file, out_file):
         comments = self.parser.parseFile(file)
@@ -457,7 +476,7 @@ if __name__ == "__main__":
         parser = OptionParser("usage: %prog [options] file1 [file2...]")
 
         parser.add_option("-d", "--directory", dest="directory", help="writes file(s) to DIR", metavar="DIR", default=".")
-        parser.add_option("-o", "--output", dest="output", help="outputs files as 'html' or 'markdown'", default='markdown')
+        parser.add_option("-o", "--output", dest="output", help="outputs files as one of: html, marcdoc, markdown", default='markdown')
         parser.add_option("-b", "--base-url", dest="base_url", help="base url for links")
 
         return parser
@@ -468,7 +487,7 @@ if __name__ == "__main__":
     if len(args) < 1:
         opt_parser.error("Need at least one file to parse.")
 
-    renderer = Renderer((options.output == 'html'), options.base_url)
+    renderer = Renderer(options.output, options.base_url)
 
     for f in args:
         out = options.directory+'/'+os.path.basename(f)
